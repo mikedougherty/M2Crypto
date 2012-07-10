@@ -391,28 +391,38 @@ int ssl_set_fd(SSL *ssl, int fd) {
     return ret;
 }
 
+void SetWantRWError(int which) {
+    PyObject *o = Py_BuildValue("(is)", which, ERR_reason_error_string(ERR_get_error()));
+
+    if (o != NULL) {
+        PyErr_SetObject(_ssl_err, o);
+        Py_DECREF(o);
+    }
+}
+
 PyObject *ssl_accept(SSL *ssl) {
     PyObject *obj = NULL;
-    int r, err;
+    int r, err, which;
 
     Py_BEGIN_ALLOW_THREADS
     r = SSL_accept(ssl);
     Py_END_ALLOW_THREADS
 
 
-    switch (SSL_get_error(ssl, r)) {
+    switch ((which = SSL_get_error(ssl, r))) {
         case SSL_ERROR_NONE:
-        case SSL_ERROR_ZERO_RETURN:
             obj = PyInt_FromLong((long)1);
             break;
         case SSL_ERROR_WANT_WRITE:
         case SSL_ERROR_WANT_READ:
-            obj = PyInt_FromLong((long)0);
+            SetWantRWError(which);
+            obj = NULL;
             break;
         case SSL_ERROR_SSL:
             PyErr_SetString(_ssl_err, ERR_reason_error_string(ERR_get_error()));
             obj = NULL;
             break;
+        case SSL_ERROR_ZERO_RETURN:
         case SSL_ERROR_SYSCALL:
             err = ERR_get_error();
             if (err)
@@ -431,26 +441,27 @@ PyObject *ssl_accept(SSL *ssl) {
 
 PyObject *ssl_connect(SSL *ssl) {
     PyObject *obj = NULL;
-    int r, err;
+    int r, err, which;
 
     Py_BEGIN_ALLOW_THREADS
     r = SSL_connect(ssl);
     Py_END_ALLOW_THREADS
 
     
-    switch (SSL_get_error(ssl, r)) {
+    switch ((which = SSL_get_error(ssl, r))) {
         case SSL_ERROR_NONE:
-        case SSL_ERROR_ZERO_RETURN:
             obj = PyInt_FromLong((long)1);
             break;
         case SSL_ERROR_WANT_WRITE:
         case SSL_ERROR_WANT_READ:
-            obj = PyInt_FromLong((long)0);
+            SetWantRWError(which);
+            obj = NULL;
             break;
         case SSL_ERROR_SSL:
             PyErr_SetString(_ssl_err, ERR_reason_error_string(ERR_get_error()));
             obj = NULL;
             break;
+        case SSL_ERROR_ZERO_RETURN:
         case SSL_ERROR_SYSCALL:
             err = ERR_get_error();
             if (err)
@@ -474,7 +485,7 @@ void ssl_set_shutdown1(SSL *ssl, int mode) {
 PyObject *ssl_read(SSL *ssl, int num) {
     PyObject *obj = NULL;
     void *buf;
-    int r, err;
+    int r, err, which;
 
     if (!(buf = PyMem_Malloc(num))) {
         PyErr_SetString(PyExc_MemoryError, "ssl_read");
@@ -487,22 +498,22 @@ PyObject *ssl_read(SSL *ssl, int num) {
     Py_END_ALLOW_THREADS
 
 
-    switch (SSL_get_error(ssl, r)) {
+    switch ((which = SSL_get_error(ssl, r))) {
         case SSL_ERROR_NONE:
-        case SSL_ERROR_ZERO_RETURN:
             buf = PyMem_Realloc(buf, r);
             obj = PyString_FromStringAndSize(buf, r);
             break;
         case SSL_ERROR_WANT_WRITE:
         case SSL_ERROR_WANT_READ:
         case SSL_ERROR_WANT_X509_LOOKUP:
-            Py_INCREF(Py_None);
-            obj = Py_None;
+            SetWantRWError(which);
+            obj = NULL;
             break;
         case SSL_ERROR_SSL:
             PyErr_SetString(_ssl_err, ERR_reason_error_string(ERR_get_error()));
             obj = NULL;
             break;
+        case SSL_ERROR_ZERO_RETURN:
         case SSL_ERROR_SYSCALL:
             err = ERR_get_error();
             if (err)
@@ -523,7 +534,7 @@ PyObject *ssl_read(SSL *ssl, int num) {
 PyObject *ssl_read_nbio(SSL *ssl, int num) {
     PyObject *obj = NULL;
     void *buf;
-    int r, err;
+    int r, err, which;
 
 
     if (!(buf = PyMem_Malloc(num))) {
@@ -537,22 +548,22 @@ PyObject *ssl_read_nbio(SSL *ssl, int num) {
     Py_END_ALLOW_THREADS
     
     
-    switch (SSL_get_error(ssl, r)) {
+    switch ((which = SSL_get_error(ssl, r))) {
         case SSL_ERROR_NONE:
-        case SSL_ERROR_ZERO_RETURN:
             buf = PyMem_Realloc(buf, r);
             obj = PyString_FromStringAndSize(buf, r);
             break;
         case SSL_ERROR_WANT_WRITE:
         case SSL_ERROR_WANT_READ:
         case SSL_ERROR_WANT_X509_LOOKUP:
-            Py_INCREF(Py_None);
-            obj = Py_None;
+            SetWantRWError(which);
+            obj = NULL;
             break;
         case SSL_ERROR_SSL:
             PyErr_SetString(_ssl_err, ERR_reason_error_string(ERR_get_error()));
             obj = NULL;
             break;
+        case SSL_ERROR_ZERO_RETURN:
         case SSL_ERROR_SYSCALL:
             err = ERR_get_error();
             if (err)
@@ -572,7 +583,7 @@ PyObject *ssl_read_nbio(SSL *ssl, int num) {
 
 int ssl_write(SSL *ssl, PyObject *blob) {
     const void *buf;
-    int len, r, err, ret;
+    int len, r, err, ret, which;
 
 
     if (m2_PyObject_AsReadBufferInt(blob, &buf, &len) == -1) {
@@ -585,13 +596,14 @@ int ssl_write(SSL *ssl, PyObject *blob) {
     Py_END_ALLOW_THREADS
 
 
-    switch (SSL_get_error(ssl, r)) {
+    switch ((which = SSL_get_error(ssl, r))) {
         case SSL_ERROR_NONE:
-        case SSL_ERROR_ZERO_RETURN:
             ret = r;
             break;
         case SSL_ERROR_WANT_WRITE:
         case SSL_ERROR_WANT_READ:
+            SetWantRWError(which);
+            return -1;
         case SSL_ERROR_WANT_X509_LOOKUP:
             ret = -1;
             break;
@@ -599,6 +611,7 @@ int ssl_write(SSL *ssl, PyObject *blob) {
             PyErr_SetString(_ssl_err, ERR_reason_error_string(ERR_get_error()));
             ret = -1;
             break;
+        case SSL_ERROR_ZERO_RETURN:
         case SSL_ERROR_SYSCALL:
             err = ERR_get_error();
             if (err)
@@ -617,7 +630,7 @@ int ssl_write(SSL *ssl, PyObject *blob) {
 
 int ssl_write_nbio(SSL *ssl, PyObject *blob) {
     const void *buf;
-    int len, r, err, ret;
+    int len, r, err, ret, which;
 
 
     if (m2_PyObject_AsReadBufferInt(blob, &buf, &len) == -1) {
@@ -630,19 +643,21 @@ int ssl_write_nbio(SSL *ssl, PyObject *blob) {
     Py_END_ALLOW_THREADS
     
     
-    switch (SSL_get_error(ssl, r)) {
+    switch ((which = SSL_get_error(ssl, r))) {
         case SSL_ERROR_NONE:
-        case SSL_ERROR_ZERO_RETURN:
             ret = r;
             break;
         case SSL_ERROR_WANT_WRITE:
         case SSL_ERROR_WANT_READ:
+            SetWantRWError(which);
+            return -1;
         case SSL_ERROR_WANT_X509_LOOKUP:
             ret = -1;
             break;
         case SSL_ERROR_SSL:
             ret = -1;
             break;
+        case SSL_ERROR_ZERO_RETURN:
         case SSL_ERROR_SYSCALL:
             err = ERR_get_error();
             if (err)

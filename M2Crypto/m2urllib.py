@@ -65,6 +65,6 @@ def open_https(self, url, data=None, ssl_context=None):
     # Stop again.
 
 # Minor brain surgery. 
-URLopener.open_https = open_https
+# URLopener.open_https = open_https
  
 

@@ -40,6 +40,9 @@ class _M2CryptoBuildExt(build_ext.build_ext):
             self.libraries = ['ssl', 'crypto']
             self.openssl = '/usr'
        
+            sdkdir = '/Developer/SDKs/MacOSX10.4u.sdk'
+            if sys.platform.startswith('darwin') and os.path.exists(sdkdir):
+                self.openssl = sdkdir + '/usr'
     
     def finalize_options(self):
         '''Overloaded build_ext implementation to append custom openssl
@@ -124,10 +127,20 @@ if sys.version_info < (2,4):
     
     build_ext.build_ext.swig_sources = swig_sources
 
+compile_args =['-DTHREADING']
+link_args = []
+libs = []
+
+if os.name == 'nt':
+    compile_args += ['/GL', '/Zi', '/GS-', '/Os']
+    link_args += ['/GL', '/Zi', '/GS-', '/Os']
+    libs += ['User32', 'Advapi32', 'Gdi32', 'Ws2_32']
 
 m2crypto = Extension(name = 'M2Crypto.__m2crypto',
                      sources = ['SWIG/_m2crypto.i'],
-                     extra_compile_args = ['-DTHREADING'],
+                     extra_compile_args = compile_args,
+                     extra_link_args = link_args,
+                     libraries=libs,
                      #extra_link_args = ['-Wl,-search_paths_first'], # Uncomment to build Universal Mac binaries
                      )
 
